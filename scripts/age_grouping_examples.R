@@ -49,7 +49,8 @@ fit <- lmFit(expr_mat, design)
 fit <- eBayes(fit)
 
 # Find coef name for Q4 vs Q1 (example) or trend (age_ord)
-coef_name_q4 <- grep('df.age_qQ4|age_qQ4|df\.age_qQ4', colnames(design), value = TRUE)
+# look for common age_q Q4 column name patterns
+coef_name_q4 <- grep('age_qQ4', colnames(design), value = TRUE)
 if(length(coef_name_q4) == 0) coef_name_q4 <- grep('Q4', colnames(design), value = TRUE)
 if(length(coef_name_q4) == 0) coef_name_q4 <- NULL
 
@@ -59,24 +60,23 @@ if('age_ord' %in% colnames(df)){
   design_trend <- model.matrix(~ df$age_ord + df$sex + df$batch + df$CRP)
   fit_trend <- lmFit(expr_mat, design_trend)
   fit_trend <- eBayes(fit_trend)
-  coef_name_trend <- 'df.age_ord'
+  # find numeric age_ord coefficient name in fit_trend
+  coef_name_trend <- grep('age_ord', colnames(design_trend), value = TRUE)
+  if(length(coef_name_trend)==0) coef_name_trend <- NULL
 }
 
+# If trend is available prefer it
 if(!is.null(coef_name_trend)){
-  res <- topTable(fit_trend, coef = coef_name_trend, number = Inf, adjust.method = 'BH')
+  res <- topTable(fit_trend, coef = coef_name_trend[1], number = Inf, adjust.method = 'BH')
   res$protein <- rownames(res)
   write.csv(res, file = file.path(OUT_DIR, 'limma_results_trend.csv'), row.names = FALSE)
   chosen <- head(rownames(res[order(res$adj.P.Val),]), n = TOPN)
-} else if(!is.null(coef_name_q4)){
-  res <- topTable(fit, coef = coef_name_q4[1], number = Inf, adjust.method = 'BH')
-  res$protein <- rownames(res)
-  write.csv(res, file = file.path(OUT_DIR, 'limma_results_Q4_vs_Q1.csv'), row.names = FALSE)
-  chosen <- head(rownames(res[order(res$adj.P.Val),]), n = TOPN)
 } else {
-  # fallback use first age_q coefficient
-  cofs <- grep('age_q', colnames(design), value = TRUE)
-  if(length(cofs) > 0){
-    res <- topTable(fit, coef = cofs[1], number = Inf, adjust.method = 'BH')
+  # attempt to find an age-related coefficient in the original design
+  age_coefs <- grep('age_q|age', colnames(design), value = TRUE)
+  age_coefs <- setdiff(age_coefs, '(Intercept)')
+  if(length(age_coefs) > 0){
+    res <- topTable(fit, coef = age_coefs[1], number = Inf, adjust.method = 'BH')
     res$protein <- rownames(res)
     write.csv(res, file = file.path(OUT_DIR, 'limma_results_age_group.csv'), row.names = FALSE)
     chosen <- head(rownames(res[order(res$adj.P.Val),]), n = TOPN)
