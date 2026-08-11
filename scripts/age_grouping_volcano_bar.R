@@ -7,8 +7,8 @@ library(viridis)
 
 LIMMA_RES <- "outputs/limma_results_trend.csv"
 OUT_DIR <- "outputs"
-TOP_LABEL <- 20    # number of labels on volcano
-TOPN_BAR <- 30     # number of bars in effect-size plot
+TOP_LABEL <- 50    # number of labels on volcano
+TOPN_BAR <- 50     # number of bars in effect-size plot
 
 res <- read.csv(LIMMA_RES, stringsAsFactors = FALSE)
 if(!all(c('logFC','P.Value','adj.P.Val','protein','t') %in% colnames(res))) stop('limma results missing required columns')
@@ -40,7 +40,7 @@ p <- ggplot(res, aes(x=logFC, y=negLogP)) +
 # label top hits by adj.P.Val
 top_hits <- head(res[order(res$adj.P.Val), ], n = TOP_LABEL)
 # increase repel parameters to avoid overlaps
-p <- p + geom_text_repel(data=top_hits, aes(label=protein), size=3.2, max.overlaps = 50, box.padding = 0.3)
+p <- p + geom_text_repel(data=top_hits, aes(label=protein), size=3.6, max.overlaps = 200, box.padding = 0.3)
 
 # add a horizontal guide for p = 0.001
 p <- p + geom_hline(yintercept = -log10(0.001), linetype = 'dashed', color = 'grey50')
@@ -65,11 +65,11 @@ bp <- ggplot(bar_df, aes(x=protein, y=logFC, fill=logFC>0)) +
   geom_bar(stat='identity', width=0.7) +
   geom_errorbar(aes(ymin=logFC - SE, ymax=logFC + SE), width=0.3, na.rm=TRUE) +
   coord_flip() +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 14) +
   xlab('Protein') + ylab('Log2 fold change (trend)') +
   ggtitle(sprintf('Top %d proteins by |logFC|', TOPN_BAR)) +
   scale_fill_manual(values = viridis(2, option = "D")) +
-  theme(legend.position='none', axis.text.y = element_text(size=7))
+  theme(legend.position='none', axis.text.y = element_text(size=9))
 
 png(bar_png, width=8, height=6, units='in', res=300)
 print(bp)
