@@ -5,7 +5,7 @@ library(pheatmap)
 library(RColorBrewer)
 library(viridis)
 
-DATA_FILE <- "data/expr_sample_table.csv"  # set to your real SomaScan/Olink CSV
+DATA_FILE <- "data/ihm_real_age_analysis.csv"  # real IHM protein matrix with derived age/sex/batch/CRP metadata
 PROTEIN_LIST_FILE <- "data/top50_proteins.txt" # optional: one protein per line
 LIMMA_RES <- "outputs/limma_results_trend.csv"
 OUT_DIR <- "outputs"
@@ -16,6 +16,9 @@ dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
 cat("Loading data...\n")
 df <- read.csv(DATA_FILE, stringsAsFactors = FALSE)
+if (nrow(df) > 0 && any(grepl('^Group', trimws(as.character(df[[1]])), ignore.case = TRUE))) {
+  df <- df[!grepl('^Group', trimws(as.character(df[[1]])), ignore.case = TRUE), , drop = FALSE]
+}
 res <- read.csv(LIMMA_RES, stringsAsFactors = FALSE)
 
 # proteins present in data

@@ -15,7 +15,7 @@ SEED = 12345
 np.random.seed(SEED)
 
 # === User params ===
-DATA_FILE = 'data/expr_sample_table.csv'  # change to your SomaScan/Olink CSV path
+DATA_FILE = 'data/ihm_real_age_analysis.csv'  # real IHM matrix with derived age/sex/batch/CRP metadata
 OUT_DIR = 'outputs'
 PROT_PREFIX = 'p'   # set to '' to auto-detect protein columns (recommended for real SomaScan/Olink)
 PROTEIN_LIST_FILE = 'data/top50_proteins.txt'  # optional, one protein per line; if present, used directly
@@ -27,6 +27,17 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 print('Loading data:', DATA_FILE)
 df = pd.read_csv(DATA_FILE)
+
+# Some raw matrices include a trailing metadata row (e.g. Group / Group1 ...), which is not a protein.
+# Drop it defensively before analysis.
+if not df.empty and 'SampleID' in df.columns:
+    sample_col = df.columns[0]
+    if sample_col.startswith('Unnamed:'):
+        df = df.rename(columns={sample_col: 'SampleID'})
+    df = df.loc[~df.iloc[:, 0].astype(str).str.lower().str.startswith('group')].copy()
+else:
+    if not df.empty:
+        df = df.loc[~df.iloc[:, 0].astype(str).str.lower().str.startswith('group')].copy()
 
 # quartiles and custom bins
 q_breaks = df['age'].quantile([0,0.25,0.5,0.75,1.0]).values
@@ -72,6 +83,7 @@ for c in covar_cols:
         # coerce numeric, allow NaN
         X_base[c] = pd.to_numeric(df[c], errors='coerce')
 # add intercept
+X_base = X_base.apply(pd.to_numeric, errors='coerce')
 X_base = add_constant(X_base, has_constant='add')
 
 # age dummies for quartiles (drop_first -> Q1 reference)
@@ -80,6 +92,7 @@ if age_dummies.shape[1] == 0:
     raise SystemExit('age_q dummy not created; check age data')
 
 X_full = pd.concat([X_base, age_dummies], axis=1)
+X_full = X_full.astype(float)
 
 results = []
 import statsmodels.api as sm
@@ -89,10 +102,10 @@ for prot in prot_cols:
     if mask.sum() < 3:
         results.append((prot, np.nan, np.nan, np.nan, np.nan, mask.sum()))
         continue
-    X = X_full.loc[mask, :]
+    X = X_full.loc[mask, :].astype(float)
     ysub = y.loc[mask]
     try:
-        model = sm.OLS(ysub.values, X.values).fit()
+        model = sm.OLS(ysub.values, X.to_numpy(dtype=float)).fit()
         # coefficient for highest quartile vs Q1: find age_q_Q4 column
         age_col = [c for c in X.columns if 'age_q_Q4' in c]
         if len(age_col) == 0:
@@ -122,7 +135,8 @@ if os.path.exists(PROTEIN_LIST_FILE):
         listed = [ln.strip() for ln in fh if ln.strip()]
     sel = [p for p in listed if p in df.columns]
     if len(sel) == 0:
-        raise SystemExit('Protein list provided but none found in data columns')
+        sel = res_df.dropna(subset=['adj_p']).head(TOP_N)['protein'].values
+        sel = [p for p in sel if p in df.columns]
 else:
     sel = res_df.dropna(subset=['adj_p']).head(TOP_N)['protein'].values
     sel = [p for p in sel if p in df.columns]

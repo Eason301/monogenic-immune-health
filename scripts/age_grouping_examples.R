@@ -9,7 +9,7 @@ library(pheatmap)
 set.seed(12345)
 
 # === User params ===
-DATA_FILE <- "data/expr_sample_table.csv"  # change to your path
+DATA_FILE <- "data/ihm_real_age_analysis.csv"  # real IHM protein matrix with derived age/sex/batch/CRP metadata
 OUT_DIR <- "outputs"
 PROT_PREFIX <- "p"
 TOPN <- 50
@@ -19,6 +19,11 @@ dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
 cat("Loading data:", DATA_FILE, "\n")
 df <- read.csv(DATA_FILE, stringsAsFactors = FALSE)
+
+# Some raw matrices append a trailing Group row for annotation; remove it defensively.
+if (nrow(df) > 0 && any(grepl('^Group', trimws(as.character(df[[1]])), ignore.case = TRUE))) {
+  df <- df[!grepl('^Group', trimws(as.character(df[[1]])), ignore.case = TRUE), , drop = FALSE]
+}
 
 # Age grouping: quartiles and custom
 # quartiles
