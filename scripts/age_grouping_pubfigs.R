@@ -3,12 +3,14 @@
 
 library(pheatmap)
 library(RColorBrewer)
+library(viridis)
 
-DATA_FILE <- "data/expr_sample_table.csv"
+DATA_FILE <- "data/expr_sample_table.csv"  # set to your real SomaScan/Olink CSV
+PROTEIN_LIST_FILE <- "data/top50_proteins.txt" # optional: one protein per line
 LIMMA_RES <- "outputs/limma_results_trend.csv"
 OUT_DIR <- "outputs"
 TOPN <- 50
-PROT_PREFIX <- "p"
+PROT_PREFIX <- "p"  # set to '' to auto-detect numeric protein columns (recommended for SomaScan/Olink)
 
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
@@ -17,17 +19,29 @@ df <- read.csv(DATA_FILE, stringsAsFactors = FALSE)
 res <- read.csv(LIMMA_RES, stringsAsFactors = FALSE)
 
 # proteins present in data
-prot_cols <- grep(paste0('^', PROT_PREFIX), names(df), value = TRUE)
+if(PROT_PREFIX == ""){
+  # auto-detect numeric columns excluding common metadata
+  meta_cols <- c('age','sex','batch','CRP','SampleID','age_q','age_grp','age_ord')
+  prot_cols <- names(df)[sapply(df, is.numeric) & !(names(df) %in% meta_cols)]
+} else {
+  prot_cols <- grep(paste0('^', PROT_PREFIX), names(df), value = TRUE)
+}
 if(length(prot_cols) == 0) stop('No protein columns found')
 
-# choose top N by adjusted p-value
-if(!('adj.P.Val' %in% colnames(res))){
-  # fallback common column name
-  if('adj.P.Val' %in% colnames(res)){} else stop('limma results missing adj.P.Val')
+# choose top N by adjusted p-value or use provided protein list
+if(file.exists(PROTEIN_LIST_FILE)){
+  listed <- readLines(PROTEIN_LIST_FILE)
+  chosen <- intersect(trimws(listed), prot_cols)
+  if(length(chosen) == 0) stop('Protein list provided but none found in data')
+} else {
+  if(!('adj.P.Val' %in% colnames(res))){
+    # fallback common column name
+    if('adj.P.Val' %in% colnames(res)){} else stop('limma results missing adj.P.Val')
+  }
+  res_ordered <- res[order(res$adj.P.Val), ]
+  chosen <- head(res_ordered$protein, n = TOPN)
+  chosen <- intersect(chosen, prot_cols)
 }
-res_ordered <- res[order(res$adj.P.Val), ]
-chosen <- head(res_ordered$protein, n = TOPN)
-chosen <- intersect(chosen, prot_cols)
 
 if(length(chosen) == 0) stop('No chosen proteins found in data')
 
@@ -52,9 +66,8 @@ if(!('age_grp' %in% colnames(df))){
 ann_col <- data.frame(AgeQuartile = as.character(df$age_q), AgeBin = as.character(df$age_grp), Sex = as.character(df$sex), Batch = as.character(df$batch), CRP = df$CRP, stringsAsFactors = FALSE)
 rownames(ann_col) <- colnames(scaled)
 
-# color palette (diverging)
-palette_fun <- colorRampPalette(rev(brewer.pal(n = 11, name = "RdYlBu")))
-cols <- palette_fun(200)
+# color palette: use cividis (perceptually uniform, colorblind-friendly)
+cols <- viridis::cividis(200)
 
 # PDF (vector)
 pdf_file <- file.path(OUT_DIR, 'age_diff_heatmap_limma_pub.pdf')

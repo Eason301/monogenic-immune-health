@@ -15,10 +15,11 @@ SEED = 12345
 np.random.seed(SEED)
 
 # === User params ===
-DATA_FILE = 'data/expr_sample_table.csv'  # change to your path
+DATA_FILE = 'data/expr_sample_table.csv'  # change to your SomaScan/Olink CSV path
 OUT_DIR = 'outputs'
-PROT_PREFIX = 'p'
-TOP_N = 50
+PROT_PREFIX = 'p'   # set to '' to auto-detect protein columns (recommended for real SomaScan/Olink)
+PROTEIN_LIST_FILE = 'data/top50_proteins.txt'  # optional, one protein per line; if present, used directly
+TOP_N = 50  # number of top proteins to select for heatmap
 REF_LEVEL = 'Q1'  # reference for quartiles
 # ====================
 
@@ -45,9 +46,14 @@ else:
     df['age_ord'] = pd.Categorical(df['age_q']).codes + 1
 
 # protein columns
-prot_cols = [c for c in df.columns if c.startswith(PROT_PREFIX)]
+if PROT_PREFIX == '':
+    # auto-detect protein columns: numeric columns excluding known metadata
+    metadata_cols = set(['age','sex','batch','CRP','SampleID','age_q','age_grp','age_ord'])
+    prot_cols = [c for c in df.columns if c not in metadata_cols and pd.api.types.is_numeric_dtype(df[c])]
+else:
+    prot_cols = [c for c in df.columns if c.startswith(PROT_PREFIX)]
 if len(prot_cols) == 0:
-    raise SystemExit('No protein columns found with prefix: ' + PROT_PREFIX)
+    raise SystemExit('No protein columns found; set PROT_PREFIX or provide a protein list file')
 
 # covariates
 covar_cols = []
@@ -110,7 +116,20 @@ res_df = res_df.sort_values('adj_p')
 res_df.to_csv(os.path.join(OUT_DIR, 'perprotein_ols_results.csv'), index=False)
 
 # select top proteins
-sel = res_df.dropna(subset=['adj_p']).head(TOP_N)['protein'].values
+# if a protein list file exists, use it (one protein per line)
+if os.path.exists(PROTEIN_LIST_FILE):
+    with open(PROTEIN_LIST_FILE, 'r', encoding='utf-8') as fh:
+        listed = [ln.strip() for ln in fh if ln.strip()]
+    sel = [p for p in listed if p in df.columns]
+    if len(sel) == 0:
+        raise SystemExit('Protein list provided but none found in data columns')
+else:
+    sel = res_df.dropna(subset=['adj_p']).head(TOP_N)['protein'].values
+    sel = [p for p in sel if p in df.columns]
+
+if len(sel) == 0:
+    raise SystemExit('No selected proteins found for heatmap')
+
 expr_top = df[sel].copy()
 # z-score per protein
 expr_top_z = expr_top.apply(lambda col: (col - np.nanmean(col)) / np.nanstd(col, ddof=0), axis=0)
@@ -120,7 +139,9 @@ lut = {'Q1':'#1f77b4','Q2':'#2ca02c','Q3':'#9467bd','Q4':'#ff7f0e','old':'#ff7f0
 col_colors = df['age_q'].map(lut)
 
 # clustermap (proteins rows)
-g = sns.clustermap(expr_top_z.T, cmap='vlag', row_cluster=True, col_cluster=True, col_colors=col_colors.values, figsize=(10,8), xticklabels=False)
+# use cividis colormap (good for colorblindness, perceptually uniform)
+cmap_name = 'cividis'
+g = sns.clustermap(expr_top_z.T, cmap=cmap_name, row_cluster=True, col_cluster=True, col_colors=col_colors.values, figsize=(10,8), xticklabels=False)
 plt.suptitle('Top {} age-differential proteins (OLS adj covariates)'.format(len(sel)), y=1.02)
 plt.savefig(os.path.join(OUT_DIR, 'age_diff_heatmap_ols.png'), dpi=300, bbox_inches='tight')
 plt.close()
